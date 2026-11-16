@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Burn Letter</title>
+<style>
+  body {
+    margin: 0;
+    background: #6b5444;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: Arial, sans-serif;
+  }
+  #app {
+    position: relative;
+    width: 600px;
+    height: 700px;
+  }
+  canvas {
+    display: block;
+    width: 600px;
+    height: 700px;
+    touch-action: none;
+  }
+  textarea {
+    position: absolute;
+    left: 90px;
+    top: 70px;
+    width: 420px;
+    height: 480px;
+    border: none;
+    outline: none;
+    resize: none;
+    padding: 0;
+    background: #fffdf5;
+    color: #333333;
+    font: 13px Arial, sans-serif;
+  }
+  #restart {
+    position: absolute;
+    left: 300px;
+    top: 440px;
+    transform: translate(-50%, -50%);
+    font-size: 12px;
+    padding: 6px 12px;
+    display: none;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="stage" width="600" height="700"></canvas>
+  <textarea id="letter" placeholder="Tulis kecemasanmu di sini..."></textarea>
+  <button id="restart">Tulis surat lagi</button>
+</div>
+
+<script>
+const W = 600, H = 700;
+const DESK = "#6b5444", SHADOW = "#4a3a2e", PAPER = "#fffdf5", INK = "#333333";
+const CHAR = DESK, DAWN = "#f7e3c6", ASH = "#7a6e62";
+const PX0 = 60, PY0 = 40, PX1 = 540, PY1 = 560;
+const TRACK_Y = 625, HX_MIN = 150, HX_MAX = PX1 - 10, COL_W = 6;
+
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+const textarea = document.getElementById("letter");
+const restartBtn = document.getElementById("restart");
+
+let phase = "write";
+let t = 0;
+let hx = HX_MIN;
+let dragging = false;
+let particles = [];
+let ash = [];
+let letter = "";
+let xs = [], jag = [], fh = [];
+let rafId = null;
+
+function lerpColor(c1, c2, t) {
+  t = Math.max(0, Math.min(1, t));
+  const a = [1, 3, 5].map(i => parseInt(c1.substr(i, 2), 16));
+  const b = [1, 3, 5].map(i => parseInt(c2.substr(i, 2), 16));
+  const v = a.map((x, i) => Math.round(x + (b[i] - x) * t));
+  return `rgb(${v[0]},${v[1]},${v[2]})`;
+}
+
+// ---------- Tampilan menulis ----------
+
+function drawWrite() {
+  ctx.fillStyle = DESK;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = SHADOW;
+  ctx.fillRect(PX0 + 8, PY0 + 10, PX1 - PX0, PY1 - PY0);
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(PX0, PY0, PX1 - PX0, PY1 - PY0);
+
+  ctx.fillStyle = DAWN;
+  ctx.font = "11px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Geser korek ke kanan untuk menyalakan", W / 2, TRACK_Y - 32);
+
+  ctx.fillStyle = "#8a4b2a";
+  ctx.fillRect(HX_MIN - 40, TRACK_Y - 14, PX1 - (HX_MIN - 40), 28);
+  ctx.strokeStyle = "#5c2f19";
+  ctx.strokeRect(HX_MIN - 40, TRACK_Y - 14, PX1 - (HX_MIN - 40), 28);
+
+  drawMatch();
+}
+
+function drawMatch() {
+  ctx.fillStyle = "#d9b382";
+  ctx.fillRect(hx - 120, TRACK_Y - 4, 112, 8);
+  ctx.fillStyle = "#c1121f";
+  ctx.beginPath();
+  ctx.arc(hx, TRACK_Y, 10, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function showWrite() {
+  phase = "write";
+  document.body.style.background = DESK;
+  textarea.style.display = "block";
+  textarea.value = "";
+  restartBtn.style.display = "none";
+  hx = HX_MIN;
+  drawWrite();
+}
+
+// ---------- Interaksi korek ----------
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (W / rect.width),
+    y: (e.clientY - rect.top) * (H / rect.height)
+  };
+}
+
+canvas.addEventListener("pointerdown", e => {
+  if (phase !== "write") return;
+  const p = getPos(e);
+  if (Math.abs(p.x - hx) <= 25 && Math.abs(p.y - TRACK_Y) <= 25) {
+    dragging = true;
+    canvas.setPointerCapture(e.pointerId);
+  }
+});
+
+canvas.addEventListener("pointermove", e => {
+  if (!dragging) return;
+  const p = getPos(e);
+  hx = Math.max(HX_MIN, Math.min(HX_MAX, p.x));
+  drawWrite();
+});
+
+canvas.addEventListener("pointerup", () => {
+  if (!dragging) return;
+  dragging = false;
+  if (hx >= HX_MAX - 10) {
+    strike();
+  } else {
+    hx = HX_MIN;
+    drawWrite();
+  }
+});
+
+function strike() {
+  const content = textarea.value.trim();
+  if (!content) {
+    alert("Tulis dulu suratmu ya, baru dibakar.");
+    hx = HX_MIN;
+    drawWrite();
+    return;
+  }
+  startBurn(content);
+}
+
+// ---------- Pembakaran ----------
+
+function startBurn(content) {
+  letter = content;
+  textarea.style.display = "none";
+  phase = "burning";
+  t = 0;
+  particles = [];
+
+  const n = Math.floor((PX1 - PX0) / COL_W) + 1;
+  xs = [];
+  for (let i = 0; i < n; i++) xs.push(Math.min(PX0 + i * COL_W, PX1));
+  jag = new Array(n).fill(0);
+  fh = new Array(n).fill(40);
+
+  if (rafId) cancelAnimationFrame(rafId);
+  frame();
+}
+
+function wrapText(text, x, y, maxWidth, lineHeight) {
+  const words = text.split(/\s+/);
+  let line = "";
+  for (const word of words) {
+    const test = line ? line + " " + word : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      ctx.fillText(line, x, y);
+      line = word;
+      y += lineHeight;
+    } else {
+      line = test;
+    }
+  }
+  if (line) ctx.fillText(line, x, y);
+}
+
+// Satu lidah api: lebih lebar di dasar, meruncing ke ujung, ujungnya bergoyang
+function drawTongue(x, by, h, color, w) {
+  const sway = (Math.random() * 10) - 5;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x - w, by);
+  ctx.bezierCurveTo(x - w, by - h * 0.4, x + sway * 0.4 - w * 0.3, by - h * 0.7, x + sway, by - h);
+  ctx.bezierCurveTo(x + sway * 0.4 + w * 0.3, by - h * 0.7, x + w, by - h * 0.4, x + w, by);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawBurning() {
+  const total = 280;
+  const progress = Math.min(t / total, 1);
+  const front = PY1 - progress * (PY1 - PY0);
+
+  // Bersihkan seluruh kanvas dengan warna meja setiap frame
+  // agar jejak api dan partikel tidak tertinggal di luar kertas
+  ctx.fillStyle = DESK;
+  ctx.fillRect(0, 0, W, H);
+
+  // Kertas dengan isi surat
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(PX0, PY0, PX1 - PX0, PY1 - PY0);
+  ctx.fillStyle = INK;
+  ctx.font = "13px Arial";
+  ctx.textAlign = "left";
+  wrapText(letter, PX0 + 30, PY0 + 50, PX1 - PX0 - 60, 18);
+
+  // Tutupi teks yang meluap di bawah kertas
+  ctx.fillStyle = DESK;
+  ctx.fillRect(0, PY1, W, H - PY1);
+
+  // Tepi bakaran tidak rata (berubah pelan-pelan)
+  for (let i = 0; i < jag.length; i++) {
+    jag[i] = Math.max(-8, Math.min(8, jag[i] + (Math.random() * 3 - 1.5)));
+  }
+  // Nyala api naik turun dengan halus
+  for (let i = 0; i < fh.length; i++) {
+    fh[i] = 0.7 * fh[i] + 0.3 * (30 + Math.random() * 45);
+  }
+
+  // Area arang (warnanya sama dengan meja)
+  ctx.fillStyle = CHAR;
+  ctx.beginPath();
+  ctx.moveTo(xs[0], front + jag[0]);
+  for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], front + jag[i]);
+  ctx.lineTo(PX1, PY1);
+  ctx.lineTo(PX0, PY1);
+  ctx.closePath();
+  ctx.fill();
+
+  // Api
+  if (progress < 1) {
+    const scale = Math.max(0.3, 1 - progress * 0.8);
+    for (let i = 0; i < xs.length; i++) {
+      const by = front + jag[i] + 2;
+      drawTongue(xs[i], by, fh[i] * scale, "#c1121f", 9);
+      drawTongue(xs[i], by, fh[i] * scale * 0.7, "#ff8c00", 6);
+      drawTongue(xs[i], by, fh[i] * scale * 0.4, "#ffd166", 3);
+    }
+    for (let i = 0; i < 6; i++) {
+      particles.push([
+        PX0 + Math.random() * (PX1 - PX0),
+        front + (Math.random() * 10 - 5),
+        8 + Math.random() * 8,
+        1.5 + Math.random() * 2
+      ]);
+    }
+  }
+
+  // Bara api beterbangan
+  const alive = [];
+  for (const p of particles) {
+    p[1] -= p[3];
+    p[0] += Math.random() * 2 - 1;
+    p[2] -= 0.5;
+    if (p[2] > 0) {
+      alive.push(p);
+      const r = p[2] / 2;
+      ctx.fillStyle = p[2] > 12 ? "#ffd166" : (p[2] > 6 ? "#ff8c00" : "#ff3d00");
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  particles = alive;
+
+  if (progress >= 1) {
+    phase = "after";
+    t = 0;
+    particles = [];
+    ash = [];
+    for (let i = 0; i < 70; i++) ash.push([Math.random() * W, Math.random() * H]);
+  }
+}
+
+// ---------- Fase fajar ----------
+
+function drawAfter() {
+  const progress = Math.min(t / 180, 1);
+  const bg = lerpColor(DESK, DAWN, progress);
+
+  // Warna kanvas dan halaman dibuat sama, jadi tidak ada sisi yang berbeda
+  document.body.style.background = bg;
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = ASH;
+  for (const a of ash) {
+    a[1] -= 0.4 + Math.random() * 0.8;
+    a[0] += Math.random() * 1.6 - 0.8;
+    if (a[1] < -5) {
+      a[1] = H + 5;
+      a[0] = Math.random() * W;
+    }
+    ctx.beginPath();
+    ctx.arc(a[0], a[1], 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (t > 60) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#3b3550";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText("Suratmu sudah terlepas.", W / 2, 250);
+    ctx.fillText("Sekarang waktunya istirahat, kamu boleh tidur.", W / 2, 275);
+
+    const breath = (Math.floor(t / 100) % 2 === 0)
+      ? "Tarik napas perlahan…" : "Hembuskan perlahan…";
+    ctx.fillStyle = "#5a4e6b";
+    ctx.font = "italic 14px Arial";
+    ctx.fillText(breath, W / 2, 340);
+  }
+
+  if (t === 90) {
+    restartBtn.style.display = "block";
+  }
+}
+
+// ---------- Loop utama ----------
+
+function frame() {
+  t++;
+  if (phase === "burning") drawBurning();
+  else if (phase === "after") drawAfter();
+  rafId = requestAnimationFrame(() => {
+    if (phase === "burning" || phase === "after") frame();
+  });
+}
+
+restartBtn.addEventListener("click", () => {
+  if (rafId) cancelAnimationFrame(rafId);
+  showWrite();
+});
+
+showWrite();
+</script>
+</body>
+</html>
