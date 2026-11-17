@@ -1,376 +1,676 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8">
-<title>Burn Letter</title>
-<style>
-  body {
-    margin: 0;
-    background: #6b5444;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    font-family: Arial, sans-serif;
-  }
-  #app {
-    position: relative;
-    width: 600px;
-    height: 700px;
-  }
-  canvas {
-    display: block;
-    width: 600px;
-    height: 700px;
-    touch-action: none;
-  }
-  textarea {
-    position: absolute;
-    left: 90px;
-    top: 70px;
-    width: 420px;
-    height: 480px;
-    border: none;
-    outline: none;
-    resize: none;
-    padding: 0;
-    background: #fffdf5;
-    color: #333333;
-    font: 13px Arial, sans-serif;
-  }
-  #restart {
-    position: absolute;
-    left: 300px;
-    top: 440px;
-    transform: translate(-50%, -50%);
-    font-size: 12px;
-    padding: 6px 12px;
-    display: none;
-    cursor: pointer;
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Burn Letter — Ruang Tenang</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Plus+Jakarta+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-night: #0b132b;
+      --paper-bg: #fdfbf7;
+      --paper-line: rgba(148, 163, 184, 0.28);
+      --paper-margin: rgba(239, 68, 68, 0.16);
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: linear-gradient(180deg, #0b132b 0%, #0b132b 100%);
+      color: #e2e8f0;
+      margin: 0;
+      min-height: 100dvh;
+      overflow: hidden;
+      position: relative;
+      /* Mengurangi padding atas body agar area utama lebih naik ke atas */
+      padding-top: 2px !important;
+    }
+
+    /* Overlay transisi fajar lembut dari malam ke pagi yang hangat */
+    #dawnBackdrop {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(180deg, #1c2541 0%, #3a506b 46%, #e8cbb1 100%);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 4s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 1;
+    }
+
+    body.dawn-mode #dawnBackdrop {
+      opacity: 1;
+    }
+
+    /* Kertas dengan garis sejajar sempurna mengikuti scroll teks */
+    .ruled-paper {
+      background-color: var(--paper-bg);
+      box-shadow: 
+        0 20px 45px -12px rgba(2, 6, 23, 0.65),
+        0 4px 12px rgba(0, 0, 0, 0.2),
+        inset 0 0 36px rgba(214, 198, 174, 0.22);
+      position: relative;
+    }
+
+    /* Garis tepi vertikal merah tipis khas buku tulis */
+    .ruled-paper::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 34px;
+      width: 1px;
+      background-color: var(--paper-margin);
+      pointer-events: none;
+    }
+
+    .letter-textarea {
+      font-family: 'Patrick Hand', cursive;
+      font-size: 19px; /* Tegak, rapi, dan >= 16px mencegah auto-zoom di HP */
+      line-height: 32px;
+      letter-spacing: 0.015em;
+      color: #2b2d42;
+      background-color: transparent;
+      background-image: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 31px,
+        var(--paper-line) 31px,
+        var(--paper-line) 32px
+      );
+      background-attachment: local;
+      background-position: 0 12px;
+      padding: 12px 20px 12px 46px;
+      width: 100%;
+      height: 100%;
+      border: none;
+      outline: none;
+      resize: none;
+      display: block;
+    }
+
+    .letter-textarea::placeholder {
+      color: #94a3b8;
+      opacity: 0.75;
+    }
+
+    /* Custom scrollbar halus */
+    .letter-textarea::-webkit-scrollbar {
+      width: 5px;
+    }
+    .letter-textarea::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.35);
+      border-radius: 9999px;
+    }
+
+    /* Trek gesek korek api */
+    .strike-strip {
+      background-color: #4a2511;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 0);
+      background-size: 6px 6px;
+    }
+  </style>
 </head>
-<body>
-<div id="app">
-  <canvas id="stage" width="600" height="700"></canvas>
-  <textarea id="letter" placeholder="Tulis kecemasanmu di sini..."></textarea>
-  <button id="restart">Tulis surat lagi</button>
-</div>
+<body class="flex flex-col justify-center items-center px-4 py-3 sm:py-4 relative selection:bg-amber-200 selection:text-slate-900">
 
-<script>
-const W = 600, H = 700;
-const DESK = "#6b5444", SHADOW = "#4a3a2e", PAPER = "#fffdf5", INK = "#333333";
-const CHAR = DESK, DAWN = "#f7e3c6", ASH = "#7a6e62";
-const PX0 = 60, PY0 = 40, PX1 = 540, PY1 = 560;
-const TRACK_Y = 625, HX_MIN = 150, HX_MAX = PX1 - 10, COL_W = 6;
+  <!-- Lapisan Latar Fajar -->
+  <div id="dawnBackdrop"></div>
 
-const canvas = document.getElementById("stage");
-const ctx = canvas.getContext("2d");
-const textarea = document.getElementById("letter");
-const restartBtn = document.getElementById("restart");
+  <!-- Dekorasi Langit Malam Minimalis & Statis (Tanpa Kedip) -->
+  <div id="nightDecor" class="fixed inset-0 pointer-events-none overflow-hidden z-0 transition-opacity duration-1000">
+    <!-- Bintang-bintang kecil diam (statis) -->
+    <svg class="w-full h-full opacity-40" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12%" cy="18%" r="1" fill="#f8fafc" />
+      <circle cx="28%" cy="9%" r="1.2" fill="#e2e8f0" />
+      <circle cx="45%" cy="22%" r="0.8" fill="#cbd5e1" />
+      <circle cx="68%" cy="14%" r="1.1" fill="#f8fafc" />
+      <circle cx="82%" cy="26%" r="0.9" fill="#e2e8f0" />
+      <circle cx="18%" cy="42%" r="0.8" fill="#cbd5e1" />
+      <circle cx="89%" cy="48%" r="1" fill="#f8fafc" />
+      <circle cx="8%" cy="74%" r="1.1" fill="#e2e8f0" />
+      <circle cx="91%" cy="78%" r="0.9" fill="#cbd5e1" />
+    </svg>
+  </div>
 
-let phase = "write";
-let t = 0;
-let hx = HX_MIN;
-let dragging = false;
-let particles = [];
-let ash = [];
-let letter = "";
-let xs = [], jag = [], fh = [];
-let rafId = null;
+  <!-- Area Utama Menulis & Korek -->
+  <main id="writeSection" class="relative z-10 w-full max-w-[460px] flex flex-col items-center gap-1.5 pt-1">
+    
+    <!-- Header Sejajar dengan Bulan Purnama di Kanan -->
+    <header id="headerText" class="w-full flex items-center justify-between mb-1 px-1 transition-opacity duration-700">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-semibold text-amber-50 tracking-wide drop-shadow-sm">
+          Burn Letter
+        </h1>
+        <p class="text-xs sm:text-sm text-slate-400 font-light mt-0.5">
+          by Namamu
+        </p>
+      </div>
+      <!-- Bulan Purnama dengan Cahaya Lembut di Sini -->
+      <svg class="w-11 h-11 sm:w-14 sm:h-14 text-amber-100/95 drop-shadow-[0_0_14px_rgba(254,243,199,0.5)] shrink-0" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="12" cy="12" r="9" />
+      </svg>
+    </header>
 
-function lerpColor(c1, c2, t) {
-  t = Math.max(0, Math.min(1, t));
-  const a = [1, 3, 5].map(i => parseInt(c1.substr(i, 2), 16));
-  const b = [1, 3, 5].map(i => parseInt(c2.substr(i, 2), 16));
-  const v = a.map((x, i) => Math.round(x + (b[i] - x) * t));
-  return `rgb(${v[0]},${v[1]},${v[2]})`;
-}
+    <!-- Teks petunjuk tepat di atas kertas -->
+    <p class="text-xs sm:text-sm text-slate-400/50 font-light tracking-wide self-start pl-1">
+      Tulis sepuasnya, bakar setelahnya.
+    </p>
 
-// ---------- Tampilan menulis ----------
+    <!-- Wadah Kertas Asli (Sudut Lancip / Persegi Siku-siku) -->
+    <div id="paperCard" class="ruled-paper w-full h-[52vh] min-h-[290px] max-h-[410px] rounded-none overflow-hidden transition-opacity duration-300">
+      <textarea 
+        id="letterInput" 
+        class="letter-textarea" 
+        placeholder="Apa yang kamu pikirkan malam ini?"
+        spellcheck="false"
+      ></textarea>
+    </div>
 
-function drawWrite() {
-  ctx.fillStyle = DESK;
-  ctx.fillRect(0, 0, W, H);
+    <!-- Kontrol Geser Korek Api di Bawah Kertas -->
+    <div id="matchWrapper" class="w-full flex flex-col items-center select-none mt-0.5">
+      <div id="matchTrack" class="relative w-full h-11 sm:h-12 rounded-full bg-slate-900/80 border border-slate-700/60 p-1.5 flex items-center shadow-inner overflow-hidden">
+        <!-- Area gesek korek -->
+        <div class="strike-strip absolute inset-y-1.5 left-12 right-2 rounded-full opacity-75"></div>
 
-  ctx.fillStyle = SHADOW;
-  ctx.fillRect(PX0 + 8, PY0 + 10, PX1 - PX0, PY1 - PY0);
-  ctx.fillStyle = PAPER;
-  ctx.fillRect(PX0, PY0, PX1 - PX0, PY1 - PY0);
+        <!-- Teks petunjuk -->
+        <span id="trackHint" class="w-full text-center text-xs sm:text-sm text-amber-100/65 pl-14 pr-4 pointer-events-none transition-opacity duration-200">
+          Geser korek ke kanan untuk membakar
+        </span>
 
-  ctx.fillStyle = DAWN;
-  ctx.font = "11px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText("Geser korek ke kanan untuk menyalakan", W / 2, TRACK_Y - 32);
+        <!-- Batang & Kepala Korek Api yang Digeser -->
+        <div id="matchHandle" role="slider" aria-label="Geser korek api" tabindex="0" class="absolute left-2 top-1/2 -translate-y-1/2 flex items-center cursor-grab active:cursor-grabbing touch-none z-10 py-1 pr-1">
+          <div class="w-14 sm:w-16 h-2 rounded-l-sm bg-gradient-to-r from-amber-200 to-amber-300 shadow-sm"></div>
+          <div class="w-5 h-4 -ml-0.5 rounded-full bg-gradient-to-br from-rose-500 via-red-600 to-red-800 shadow-md border border-red-400/30"></div>
+        </div>
+      </div>
+    </div>
+  </main>
 
-  ctx.fillStyle = "#8a4b2a";
-  ctx.fillRect(HX_MIN - 40, TRACK_Y - 14, PX1 - (HX_MIN - 40), 28);
-  ctx.strokeStyle = "#5c2f19";
-  ctx.strokeRect(HX_MIN - 40, TRACK_Y - 14, PX1 - (HX_MIN - 40), 28);
+  <!-- Canvas Pembakaran & Abu Melayang -->
+  <canvas id="burnCanvas" class="fixed inset-0 z-10 pointer-events-none hidden"></canvas>
 
-  drawMatch();
-}
+  <!-- Fase Relaksasi Napas 4-7-8 Setelah Terbakar -->
+  <section id="relaxSection" class="hidden fixed inset-0 z-20 flex-col items-center justify-center text-center px-6 opacity-0 transition-opacity duration-1000">
+    <div class="w-full max-w-md flex flex-col items-center">
+      
+      <!-- Pesan Utama Sesuai Sketsa -->
+      <div class="space-y-2 mb-9">
+        <h2 class="text-xl sm:text-2xl font-medium text-amber-50 drop-shadow-sm tracking-wide">
+          Bebanmu telah terbakar.
+        </h2>
+        <p class="text-sm sm:text-base text-slate-200/90 font-light leading-relaxed">
+          Terima kasih sudah bertahan, selamat malam.
+        </p>
+      </div>
 
-function drawMatch() {
-  ctx.fillStyle = "#d9b382";
-  ctx.fillRect(hx - 120, TRACK_Y - 4, 112, 8);
-  ctx.fillStyle = "#c1121f";
-  ctx.beginPath();
-  ctx.arc(hx, TRACK_Y, 10, 0, Math.PI * 2);
-  ctx.fill();
-}
+      <!-- Simulasi Napas 4-7-8: Bola Berjalan di Garis Tanpa Angka Waktu -->
+      <div class="w-full max-w-[280px] sm:max-w-[320px] flex flex-col items-center mb-12">
+        <span id="breathInstruction" class="text-base sm:text-lg font-normal text-amber-100 tracking-wide mb-5 transition-opacity duration-300">
+          Tarik napas...
+        </span>
 
-function showWrite() {
-  phase = "write";
-  document.body.style.background = DESK;
-  textarea.style.display = "block";
-  textarea.value = "";
-  restartBtn.style.display = "none";
-  hx = HX_MIN;
-  drawWrite();
-}
+        <!-- Lintasan Garis & Bola Bercahaya -->
+        <div class="relative w-full h-8 flex items-center">
+          <div class="w-full h-[2px] rounded-full bg-white/30"></div>
+          
+          <span class="absolute left-0 w-1.5 h-1.5 rounded-full bg-white/40 -translate-x-1/2"></span>
+          <span class="absolute left-[21%] w-1.5 h-1.5 rounded-full bg-white/45 -translate-x-1/2"></span>
+          <span class="absolute left-[58%] w-1.5 h-1.5 rounded-full bg-white/45 -translate-x-1/2"></span>
+          <span class="absolute right-0 w-1.5 h-1.5 rounded-full bg-white/40 translate-x-1/2"></span>
 
-// ---------- Interaksi korek ----------
+          <div
+            id="breathOrb"
+            class="absolute left-0 w-4 h-4 -translate-x-1/2 rounded-full bg-amber-100 shadow-[0_0_16px_rgba(254,243,199,0.95)] border border-white"
+            style="left: 0%;"
+          ></div>
+        </div>
+      </div>
 
-function getPos(e) {
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: (e.clientX - rect.left) * (W / rect.width),
-    y: (e.clientY - rect.top) * (H / rect.height)
-  };
-}
+      <!-- Opsi Tulis Surat Lagi Samar & Kecil dengan Ikon Amplop -->
+      <button
+        id="rewriteBtn"
+        type="button"
+        class="group flex flex-col items-center gap-1.5 text-slate-800/35 hover:text-slate-900/70 transition-colors duration-300 py-2 px-4 cursor-pointer"
+      >
+        <span class="text-[11px] tracking-wide">Tulis surat lagi</span>
+        <svg class="w-5 h-5 opacity-70 group-hover:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="m3 7 9 6 9-6" />
+        </svg>
+      </button>
 
-canvas.addEventListener("pointerdown", e => {
-  if (phase !== "write") return;
-  const p = getPos(e);
-  if (Math.abs(p.x - hx) <= 25 && Math.abs(p.y - TRACK_Y) <= 25) {
-    dragging = true;
-    canvas.setPointerCapture(e.pointerId);
-  }
-});
+    </div>
+  </section>
 
-canvas.addEventListener("pointermove", e => {
-  if (!dragging) return;
-  const p = getPos(e);
-  hx = Math.max(HX_MIN, Math.min(HX_MAX, p.x));
-  drawWrite();
-});
+  <!-- Notifikasi Halus -->
+  <div id="toastNotice" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2.5 rounded-full bg-slate-800/95 text-slate-200 text-xs sm:text-sm border border-slate-700 shadow-lg opacity-0 pointer-events-none transition-all duration-300">
+    Tulis dulu isi suratmu sebelum dibakar.
+  </div>
 
-canvas.addEventListener("pointerup", () => {
-  if (!dragging) return;
-  dragging = false;
-  if (hx >= HX_MAX - 10) {
-    strike();
-  } else {
-    hx = HX_MIN;
-    drawWrite();
-  }
-});
+  <footer class="relative z-10 text-[11px] text-slate-500/60 mt-2">
+    &nbsp;
+  </footer>
 
-function strike() {
-  const content = textarea.value.trim();
-  if (!content) {
-    alert("Tulis dulu suratmu ya, baru dibakar.");
-    hx = HX_MIN;
-    drawWrite();
-    return;
-  }
-  startBurn(content);
-}
+  <script>
+    const paperCard = document.getElementById('paperCard');
+    const letterInput = document.getElementById('letterInput');
+    const matchTrack = document.getElementById('matchTrack');
+    const matchHandle = document.getElementById('matchHandle');
+    const trackHint = document.getElementById('trackHint');
+    const burnCanvas = document.getElementById('burnCanvas');
+    const ctx = burnCanvas.getContext('2d');
+    const writeSection = document.getElementById('writeSection');
+    const headerText = document.getElementById('headerText');
+    const nightDecor = document.getElementById('nightDecor');
+    const relaxSection = document.getElementById('relaxSection');
+    const toastNotice = document.getElementById('toastNotice');
+    const rewriteBtn = document.getElementById('rewriteBtn');
 
-// ---------- Pembakaran ----------
+    // Muat draf yang tersimpan di Local Storage saat halaman dimuat
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedDraft = localStorage.getItem('burn_letter_draft');
+      if (savedDraft) {
+        letterInput.value = savedDraft;
+      }
+    });
 
-function startBurn(content) {
-  letter = content;
-  textarea.style.display = "none";
-  phase = "burning";
-  t = 0;
-  particles = [];
+    // Simpan otomatis ke Local Storage setiap kali pengguna mengetik
+    letterInput.addEventListener('input', () => {
+      localStorage.setItem('burn_letter_draft', letterInput.value);
+    });
 
-  const n = Math.floor((PX1 - PX0) / COL_W) + 1;
-  xs = [];
-  for (let i = 0; i < n; i++) xs.push(Math.min(PX0 + i * COL_W, PX1));
-  jag = new Array(n).fill(0);
-  fh = new Array(n).fill(40);
+    let isDragging = false;
+    let startX = 0;
+    let currentOffset = 0;
+    let maxSlide = 0;
+    let breathTimerId = null;
+    let breathRingRafId = null;
+    let burnAnimId = null;
+    let ashAnimId = null;
 
-  if (rafId) cancelAnimationFrame(rafId);
-  frame();
-}
-
-function wrapText(text, x, y, maxWidth, lineHeight) {
-  const words = text.split(/\s+/);
-  let line = "";
-  for (const word of words) {
-    const test = line ? line + " " + word : word;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      ctx.fillText(line, x, y);
-      line = word;
-      y += lineHeight;
-    } else {
-      line = test;
+    function showToast(message) {
+      toastNotice.textContent = message;
+      toastNotice.style.opacity = '1';
+      toastNotice.style.transform = 'translate(-50%, -6px)';
+      setTimeout(() => {
+        toastNotice.style.opacity = '0';
+        toastNotice.style.transform = 'translate(-50%, 0)';
+      }, 2600);
     }
-  }
-  if (line) ctx.fillText(line, x, y);
-}
 
-// Satu lidah api: lebih lebar di dasar, meruncing ke ujung, ujungnya bergoyang
-function drawTongue(x, by, h, color, w) {
-  const sway = (Math.random() * 10) - 5;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(x - w, by);
-  ctx.bezierCurveTo(x - w, by - h * 0.4, x + sway * 0.4 - w * 0.3, by - h * 0.7, x + sway, by - h);
-  ctx.bezierCurveTo(x + sway * 0.4 + w * 0.3, by - h * 0.7, x + w, by - h * 0.4, x + w, by);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawBurning() {
-  const total = 280;
-  const progress = Math.min(t / total, 1);
-  const front = PY1 - progress * (PY1 - PY0);
-
-  // Bersihkan seluruh kanvas dengan warna meja setiap frame
-  // agar jejak api dan partikel tidak tertinggal di luar kertas
-  ctx.fillStyle = DESK;
-  ctx.fillRect(0, 0, W, H);
-
-  // Kertas dengan isi surat
-  ctx.fillStyle = PAPER;
-  ctx.fillRect(PX0, PY0, PX1 - PX0, PY1 - PY0);
-  ctx.fillStyle = INK;
-  ctx.font = "13px Arial";
-  ctx.textAlign = "left";
-  wrapText(letter, PX0 + 30, PY0 + 50, PX1 - PX0 - 60, 18);
-
-  // Tutupi teks yang meluap di bawah kertas
-  ctx.fillStyle = DESK;
-  ctx.fillRect(0, PY1, W, H - PY1);
-
-  // Tepi bakaran tidak rata (berubah pelan-pelan)
-  for (let i = 0; i < jag.length; i++) {
-    jag[i] = Math.max(-8, Math.min(8, jag[i] + (Math.random() * 3 - 1.5)));
-  }
-  // Nyala api naik turun dengan halus
-  for (let i = 0; i < fh.length; i++) {
-    fh[i] = 0.7 * fh[i] + 0.3 * (30 + Math.random() * 45);
-  }
-
-  // Area arang (warnanya sama dengan meja)
-  ctx.fillStyle = CHAR;
-  ctx.beginPath();
-  ctx.moveTo(xs[0], front + jag[0]);
-  for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], front + jag[i]);
-  ctx.lineTo(PX1, PY1);
-  ctx.lineTo(PX0, PY1);
-  ctx.closePath();
-  ctx.fill();
-
-  // Api
-  if (progress < 1) {
-    const scale = Math.max(0.3, 1 - progress * 0.8);
-    for (let i = 0; i < xs.length; i++) {
-      const by = front + jag[i] + 2;
-      drawTongue(xs[i], by, fh[i] * scale, "#c1121f", 9);
-      drawTongue(xs[i], by, fh[i] * scale * 0.7, "#ff8c00", 6);
-      drawTongue(xs[i], by, fh[i] * scale * 0.4, "#ffd166", 3);
+    function updateMaxSlide() {
+      maxSlide = matchTrack.clientWidth - matchHandle.offsetWidth - 16;
     }
-    for (let i = 0; i < 6; i++) {
-      particles.push([
-        PX0 + Math.random() * (PX1 - PX0),
-        front + (Math.random() * 10 - 5),
-        8 + Math.random() * 8,
-        1.5 + Math.random() * 2
-      ]);
+
+    window.addEventListener('resize', updateMaxSlide);
+    updateMaxSlide();
+
+    matchHandle.addEventListener('pointerdown', (e) => {
+      updateMaxSlide();
+      isDragging = true;
+      startX = e.clientX - currentOffset;
+      matchHandle.style.transition = 'none';
+      matchHandle.setPointerCapture(e.pointerId);
+    });
+
+    matchHandle.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      const rawX = e.clientX - startX;
+      currentOffset = Math.max(0, Math.min(maxSlide, rawX));
+      matchHandle.style.transform = `translate(${currentOffset}px, -50%)`;
+      
+      const ratio = currentOffset / (maxSlide || 1);
+      trackHint.style.opacity = Math.max(0, 1 - ratio * 1.8);
+    });
+
+    function endDrag() {
+      if (!isDragging) return;
+      isDragging = false;
+
+      if (currentOffset >= maxSlide * 0.85) {
+        const text = letterInput.value.trim();
+        if (!text) {
+          showToast('Tulis dulu isi suratmu sebelum dibakar.');
+          resetMatchPosition();
+          return;
+        }
+        currentOffset = maxSlide;
+        matchHandle.style.transform = `translate(${currentOffset}px, -50%)`;
+        startBurningSequence(letterInput.value);
+      } else {
+        resetMatchPosition();
+      }
     }
-  }
 
-  // Bara api beterbangan
-  const alive = [];
-  for (const p of particles) {
-    p[1] -= p[3];
-    p[0] += Math.random() * 2 - 1;
-    p[2] -= 0.5;
-    if (p[2] > 0) {
-      alive.push(p);
-      const r = p[2] / 2;
-      ctx.fillStyle = p[2] > 12 ? "#ffd166" : (p[2] > 6 ? "#ff8c00" : "#ff3d00");
-      ctx.beginPath();
-      ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
-      ctx.fill();
+    matchHandle.addEventListener('pointerup', endDrag);
+    matchHandle.addEventListener('pointercancel', endDrag);
+
+    function resetMatchPosition() {
+      currentOffset = 0;
+      matchHandle.style.transition = 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)';
+      matchHandle.style.transform = 'translate(0px, -50%)';
+      trackHint.style.opacity = '1';
     }
-  }
-  particles = alive;
 
-  if (progress >= 1) {
-    phase = "after";
-    t = 0;
-    particles = [];
-    ash = [];
-    for (let i = 0; i < 70; i++) ash.push([Math.random() * W, Math.random() * H]);
-  }
-}
+    function startBurningSequence(content) {
+      // Hapus draf tersimpan dari Local Storage saat surat mulai dibakar
+      localStorage.removeItem('burn_letter_draft');
 
-// ---------- Fase fajar ----------
+      const rect = paperCard.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
 
-function drawAfter() {
-  const progress = Math.min(t / 180, 1);
-  const bg = lerpColor(DESK, DAWN, progress);
+      burnCanvas.width = window.innerWidth * dpr;
+      burnCanvas.height = window.innerHeight * dpr;
+      burnCanvas.style.width = `${window.innerWidth}px`;
+      burnCanvas.style.height = `${window.innerHeight}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // Warna kanvas dan halaman dibuat sama, jadi tidak ada sisi yang berbeda
-  document.body.style.background = bg;
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, H);
+      burnCanvas.classList.remove('hidden');
+      writeSection.style.visibility = 'hidden';
+      headerText.style.opacity = '0';
 
-  ctx.fillStyle = ASH;
-  for (const a of ash) {
-    a[1] -= 0.4 + Math.random() * 0.8;
-    a[0] += Math.random() * 1.6 - 0.8;
-    if (a[1] < -5) {
-      a[1] = H + 5;
-      a[0] = Math.random() * W;
+      const px = rect.left;
+      const py = rect.top;
+      const pw = rect.width;
+      const ph = rect.height;
+
+      const colW = 6;
+      const cols = Math.floor(pw / colW) + 1;
+      const xs = Array.from({ length: cols }, (_, i) => Math.min(px + i * colW, px + pw));
+      const jag = new Array(cols).fill(0);
+      const flameH = new Array(cols).fill(32);
+
+      let frameCount = 0;
+      const totalFrames = 210;
+      let embers = [];
+
+      ctx.font = "19px 'Patrick Hand', cursive";
+      const textMaxW = pw - 66;
+      const wrappedLines = wrapParagraphs(ctx, content, textMaxW);
+
+      function drawFlameTongue(x, baseY, h, color, width) {
+        const sway = (Math.random() - 0.5) * 9;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(x - width, baseY);
+        ctx.bezierCurveTo(
+          x - width, baseY - h * 0.4,
+          x + sway * 0.4 - width * 0.3, baseY - h * 0.75,
+          x + sway, baseY - h
+        );
+        ctx.bezierCurveTo(
+          x + sway * 0.4 + width * 0.3, baseY - h * 0.75,
+          x + width, baseY - h * 0.4,
+          x + width, baseY
+        );
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      function animateBurn() {
+        frameCount++;
+        const progress = Math.min(frameCount / totalFrames, 1);
+        const burnFrontY = (py + ph) - progress * ph;
+
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+        ctx.save();
+        ctx.beginPath();
+        // Kertas bersudut lancip (persegi siku-siku) dengan clip arang
+        ctx.rect(px, py, pw, ph);
+        ctx.clip();
+
+        // Path pembakaran bergerigi di bagian atas arang
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + pw, py);
+        for (let i = cols - 1; i >= 0; i--) {
+          ctx.lineTo(xs[i], Math.max(py, burnFrontY + jag[i]));
+        }
+        ctx.closePath();
+
+        // Simpan area clip kertas yang belum terbakar agar garis dan teks terpotong bersih
+        ctx.save();
+        ctx.clip();
+
+        ctx.fillStyle = '#fdfbf7';
+        ctx.fillRect(px, py, pw, ph);
+
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)';
+        ctx.lineWidth = 1;
+        for (let ly = py + 44; ly < py + ph; ly += 32) {
+          ctx.beginPath();
+          ctx.moveTo(px, ly);
+          ctx.lineTo(px + pw, ly);
+          ctx.stroke();
+        }
+
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.16)';
+        ctx.beginPath();
+        ctx.moveTo(px + 34, py);
+        ctx.lineTo(px + 34, py + ph);
+        ctx.stroke();
+
+        ctx.fillStyle = '#2b2d42';
+        ctx.font = "19px 'Patrick Hand', cursive";
+        ctx.textBaseline = 'alphabetic';
+        let currentTextY = py + 36;
+        for (const line of wrappedLines) {
+          if (currentTextY > py + ph - 8) break;
+          ctx.fillText(line, px + 46, currentTextY);
+          currentTextY += 32;
+        }
+        ctx.restore(); // Selesai menggambar kertas utuh di area belum terbakar
+
+        // Efek transisi gosong (scorch) tepat di garis lidah api
+        const scorchGrad = ctx.createLinearGradient(0, burnFrontY - 22, 0, burnFrontY + 6);
+        scorchGrad.addColorStop(0, 'rgba(67, 20, 7, 0)');
+        scorchGrad.addColorStop(0.65, 'rgba(120, 53, 15, 0.55)');
+        scorchGrad.addColorStop(1, 'rgba(28, 25, 23, 0.95)');
+        ctx.fillStyle = scorchGrad;
+        ctx.fillRect(px, burnFrontY - 22, pw, 30);
+
+        ctx.restore();
+
+        for (let i = 0; i < cols; i++) {
+          jag[i] = Math.max(-9, Math.min(9, jag[i] + (Math.random() * 2.6 - 1.3)));
+          flameH[i] = 0.7 * flameH[i] + 0.3 * (26 + Math.random() * 38);
+        }
+
+        if (progress < 0.96) {
+          const endFade = progress > 0.8 ? (0.96 - progress) / 0.16 : 1;
+          const intensity = Math.max(0.15, (1 - progress * 0.55) * endFade);
+          for (let i = 0; i < cols; i += 2) {
+            const baseY = Math.max(py, burnFrontY + jag[i] + 2);
+            drawFlameTongue(xs[i], baseY, flameH[i] * intensity, '#dc2626', 8);
+            drawFlameTongue(xs[i], baseY, flameH[i] * intensity * 0.7, '#f97316', 5.5);
+            drawFlameTongue(xs[i], baseY, flameH[i] * intensity * 0.4, '#fde047', 3);
+          }
+
+          if (progress < 0.88) {
+            for (let k = 0; k < 4; k++) {
+              embers.push({
+                x: px + Math.random() * pw,
+                y: burnFrontY + (Math.random() * 8 - 4),
+                vy: 1.5 + Math.random() * 2.4,
+                vx: (Math.random() - 0.5) * 1.4,
+                life: 0.85,
+                size: 1.5 + Math.random() * 2.2
+              });
+            }
+          }
+        }
+
+        embers = embers.filter(p => p.life > 0);
+        for (const p of embers) {
+          p.y -= p.vy;
+          p.x += p.vx + Math.sin(p.y * 0.04) * 0.5;
+          p.life -= 0.028;
+          ctx.fillStyle = p.life > 0.5 ? `rgba(253, 224, 71, ${p.life})` : `rgba(249, 115, 22, ${p.life})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        if (progress < 1) {
+          burnAnimId = requestAnimationFrame(animateBurn);
+        } else {
+          startFloatingAsh();
+          transitionToDawnAndBreathing();
+        }
+      }
+
+      burnAnimId = requestAnimationFrame(animateBurn);
     }
-    ctx.beginPath();
-    ctx.arc(a[0], a[1], 1.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
 
-  if (t > 60) {
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#3b3550";
-    ctx.font = "bold 16px Arial";
-    ctx.fillText("Suratmu sudah terlepas.", W / 2, 250);
-    ctx.fillText("Sekarang waktunya istirahat, kamu boleh tidur.", W / 2, 275);
+    function startFloatingAsh() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const ashFlakes = Array.from({ length: 65 }, () => ({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        r: 1 + Math.random() * 1.8,
+        vy: 0.35 + Math.random() * 0.75,
+        vx: (Math.random() - 0.5) * 0.6,
+        phase: Math.random() * Math.PI * 2,
+        alpha: 0.25 + Math.random() * 0.45
+      }));
 
-    const breath = (Math.floor(t / 100) % 2 === 0)
-      ? "Tarik napas perlahan…" : "Hembuskan perlahan…";
-    ctx.fillStyle = "#5a4e6b";
-    ctx.font = "italic 14px Arial";
-    ctx.fillText(breath, W / 2, 340);
-  }
+      function renderAsh() {
+        const cw = window.innerWidth;
+        const ch = window.innerHeight;
+        ctx.clearRect(0, 0, cw, ch);
 
-  if (t === 90) {
-    restartBtn.style.display = "block";
-  }
-}
+        for (const a of ashFlakes) {
+          a.y -= a.vy;
+          a.phase += 0.02;
+          a.x += a.vx + Math.sin(a.phase) * 0.45;
 
-// ---------- Loop utama ----------
+          if (a.y < -10) {
+            a.y = ch + 10;
+            a.x = Math.random() * cw;
+          }
+          if (a.x < -10) a.x = cw + 10;
+          if (a.x > cw + 10) a.x = -10;
 
-function frame() {
-  t++;
-  if (phase === "burning") drawBurning();
-  else if (phase === "after") drawAfter();
-  rafId = requestAnimationFrame(() => {
-    if (phase === "burning" || phase === "after") frame();
-  });
-}
+          ctx.fillStyle = `rgba(92, 83, 74, ${a.alpha})`;
+          ctx.beginPath();
+          ctx.ellipse(a.x, a.y, a.r * 1.3, a.r * 0.8, a.phase * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
 
-restartBtn.addEventListener("click", () => {
-  if (rafId) cancelAnimationFrame(rafId);
-  showWrite();
-});
+        ashAnimId = requestAnimationFrame(renderAsh);
+      }
 
-showWrite();
-</script>
+      if (ashAnimId) cancelAnimationFrame(ashAnimId);
+      ashAnimId = requestAnimationFrame(renderAsh);
+    }
+
+    function wrapParagraphs(context, text, maxWidth) {
+      const paragraphs = text.split('\n');
+      const lines = [];
+      for (const para of paragraphs) {
+        if (!para.trim()) {
+          lines.push('');
+          continue;
+        }
+        const words = para.split(' ');
+        let currentLine = '';
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          if (context.measureText(testLine).width > maxWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine) lines.push(currentLine);
+      }
+      return lines;
+    }
+
+    function transitionToDawnAndBreathing() {
+      document.body.classList.add('dawn-mode');
+      nightDecor.style.opacity = '0';
+
+      relaxSection.classList.remove('hidden');
+      relaxSection.classList.add('flex');
+      requestAnimationFrame(() => {
+        relaxSection.style.opacity = '1';
+      });
+
+      start478Breathing();
+    }
+
+    function start478Breathing() {
+      const instruction = document.getElementById('breathInstruction');
+      const breathOrb = document.getElementById('breathOrb');
+
+      const phases = [
+        { label: 'Tarik napas...', seconds: 4, startPct: 0, endPct: 21 },
+        { label: 'Tahan...', seconds: 7, startPct: 21, endPct: 58 },
+        { label: 'Hembuskan perlahan...', seconds: 8, startPct: 58, endPct: 100 }
+      ];
+
+      let phaseIndex = 0;
+      let phaseStartTime = performance.now();
+
+      instruction.textContent = phases[0].label;
+      breathOrb.style.left = '0%';
+
+      function updateBreathingFrame(now) {
+        const currentPhase = phases[phaseIndex];
+        const totalMs = currentPhase.seconds * 1000;
+        const elapsed = now - phaseStartTime;
+
+        if (elapsed >= totalMs) {
+          phaseIndex = (phaseIndex + 1) % phases.length;
+          phaseStartTime = now;
+          instruction.textContent = phases[phaseIndex].label;
+          breathOrb.style.left = `${phases[phaseIndex].startPct}%`;
+        } else {
+          const t = elapsed / totalMs;
+          const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+          const currentPct = currentPhase.startPct + (currentPhase.endPct - currentPhase.startPct) * eased;
+          breathOrb.style.left = `${currentPct.toFixed(2)}%`;
+        }
+
+        breathRingRafId = requestAnimationFrame(updateBreathingFrame);
+      }
+
+      if (breathTimerId) clearInterval(breathTimerId);
+      if (breathRingRafId) cancelAnimationFrame(breathRingRafId);
+      breathRingRafId = requestAnimationFrame(updateBreathingFrame);
+    }
+
+    rewriteBtn.addEventListener('click', () => {
+      if (breathTimerId) clearInterval(breathTimerId);
+      if (breathRingRafId) cancelAnimationFrame(breathRingRafId);
+      if (burnAnimId) cancelAnimationFrame(burnAnimId);
+      if (ashAnimId) cancelAnimationFrame(ashAnimId);
+
+      // Pastikan Local Storage bersih saat menulis surat baru
+      localStorage.removeItem('burn_letter_draft');
+
+      burnCanvas.classList.add('hidden');
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+      document.body.classList.remove('dawn-mode');
+      nightDecor.style.opacity = '1';
+
+      relaxSection.style.opacity = '0';
+      setTimeout(() => {
+        relaxSection.classList.add('hidden');
+        relaxSection.classList.remove('flex');
+
+        letterInput.value = '';
+        resetMatchPosition();
+        writeSection.style.visibility = 'visible';
+        headerText.style.opacity = '1';
+      }, 500);
+    });
+  </script>
 </body>
 </html>
